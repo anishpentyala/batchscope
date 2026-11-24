@@ -5,7 +5,7 @@ Supply an ordered list of unique sample IDs, explicit partition rules, batch siz
 and tail policies. See which identities would repeat or disappear under that
 model, and how many local batches each rank would produce.
 
-This is a private experimental candidate. It has no observed users. It does not
+This is an experimental tool. It has no observed users. It does not
 inspect or run a real DataLoader, read sample contents, launch training, or prove
 that a configured training job follows this plan.
 
