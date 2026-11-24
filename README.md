@@ -103,7 +103,7 @@ estimate may miss fragmented tails. This tool does not fix those semantics; it
 makes a limited, explicit plan inspectable with identity-level accounting.
 
 [WebDataset](https://webdataset.github.io/webdataset/webdataset/) offers actual
-sharding, batching and epoch controls. This candidate does not emulate its
+sharding, batching and epoch controls. This tool does not emulate its
 pipeline or resampling rules.
 
 ## Development
@@ -111,6 +111,14 @@ pipeline or resampling rules.
 Python 3.10+, standard-library runtime. `python -m unittest discover -s tests -v`.
 The tests include an independent event-by-event reference over 9,360 small plans,
 regular input/output failures, empty sources, Unicode IDs and invalid inputs.
-No actual PyTorch execution has yet been validated. Local evidence is not hosted
-CI. Implementation and tests were produced on Anish's behalf; no claim of his
+The [first hosted run](https://github.com/anishpentyala/batchscope/actions/runs/45344164628)
+passed the standard-library and installed-wheel checks on Python 3.10, 3.13 and
+3.15. Its Python 3.13 CPU job also passed three real PyTorch 2.15.0+cpu tests:
+unshuffled map sampling with local batch tails, two-worker map loading, and the
+explicit strided/replicated iterable sources with zero or two DataLoader workers.
+Those controls compare emitted identity multiplicities and local batch counts,
+not arrival order, optimizer updates or arbitrary pipelines. NumPy was not
+installed in that CPU job; PyTorch warned about its unavailable NumPy bridge,
+which these tests do not use. Other framework versions, GPUs and custom loading
+strategies remain unvalidated. Implementation and tests were produced on Anish's behalf; no claim of his
 personal code review or use is made.
