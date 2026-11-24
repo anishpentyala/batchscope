@@ -1,0 +1,116 @@
+# batchscope
+
+Inspect a finite data-loading plan before starting a training or evaluation run.
+Supply an ordered list of unique sample IDs, explicit partition rules, batch size
+and tail policies. See which identities would repeat or disappear under that
+model, and how many local batches each rank would produce.
+
+This is a private experimental candidate. It has no observed users. It does not
+inspect or run a real DataLoader, read sample contents, launch training, or prove
+that a configured training job follows this plan.
+
+## A small but consequential tail
+
+Five samples split across two ranks need six sampler slots when padding is on.
+Then a loader that drops incomplete local batches can remove two occurrences,
+including the extra padding. Counting padding alone misses the final coverage.
+
+```sh
+python -m pip install .
+batchscope examples/padded.json
+```
+
+That example emits six occurrences of five identities, so it exits 1 with
+`COVERAGE_CHANGED`. Change `loader_drop_last` to `true` and it emits four
+identities once, omitting the fifth. This is invented input, not a measured job.
+
+## Explicit models
+
+| mode | ownership before batching | tail policy |
+| --- | --- | --- |
+| `distributed_map` | pad/truncate the supplied global order to a rank multiple, then stride by rank | loader tail is per rank; workers do not repartition sampler indices |
+| `iterable_strided` | rank-major combined consumer index `rank * workers + worker`, stride by `ranks * workers` | one tail per rank/worker |
+| `iterable_replicated` | every rank/worker sees the entire ordered universe | one tail per rank/worker |
+
+`workers` means the number of independently iterated sources per rank. Use 1 for
+single-process iterable loading. It is not a literal translation of PyTorch's
+`num_workers=0`. Map-style worker count does not multiply or repartition samples.
+
+These are declared mathematical models. The map model follows the documented
+unshuffled `DistributedSampler` padding/truncation rule and ordinary local
+batching. The iterable rules describe two explicitly chosen source strategies,
+not arbitrary PyTorch iterable datasets. A different worker ordering or nested
+sharding can produce different identities. Supply the actual intended order.
+
+No RNG or shuffle emulation, custom sampler, dynamic filtering, resampling,
+variable batch sizes, accumulation, retries, early exit, persistent-worker state,
+resume state, sample packing, or automatic framework-config parsing. Do not use
+these counts as evidence of optimizer updates or synchronized collective calls.
+
+## Input
+
+```json
+{
+  "ids": ["a", "b", "c", "d", "e"],
+  "mode": "distributed_map",
+  "ranks": 2,
+  "workers": 1,
+  "batch_size": 2,
+  "sampler_drop_last": false,
+  "loader_drop_last": false
+}
+```
+
+All fields shown are required for `distributed_map`. The other modes require all
+except `sampler_drop_last`, which is rejected rather than silently ignored.
+IDs are nonempty unique strings. Distinct IDs can contain identical sample
+contents; this tool cannot detect that. No whitespace or Unicode normalization.
+Unknown fields, duplicate JSON members, NaN/Infinity, invalid UTF-8, nonregular
+input files and plans over 8 MiB are rejected. Limits: 100,000 IDs, 1,024 combined
+consumers, 1,000,000 assigned occurrences. These are admission limits, not a hard
+RAM/time guarantee. A regular file on a slow filesystem can still block.
+
+## Report and exits
+
+Every declared ID has assigned, emitted and loader-dropped multiplicities, plus
+whether global sampler truncation removed it. Each consumer reports counts,
+batches and final batch size; per-rank batches sum that rank's worker batches.
+
+- 0: `EXACTLY_ONCE` under the supplied finite model.
+- 1: `COVERAGE_CHANGED` or `EMPTY_UNIVERSE`. Review the counts.
+- 2: invalid input, usage or output delivery failure. No usable complete report.
+
+The full report must be written and flushed before exit 0 or 1. A broken output
+may retain a JSON prefix, so use a report only with successful delivery and its
+expected exit status. Redirecting stdout is not an atomic output transaction.
+
+`UNEQUAL_RANK_BATCH_COUNTS` is a planning warning, not proof of a DDP hang.
+Actual synchronization, masking and join handling are outside this tool.
+`EXACTLY_ONCE` does not establish randomness, class balance, content uniqueness,
+annotation quality, statistical comparability, or actual sample consumption.
+Reports contain the supplied IDs. Review before sharing them.
+
+## Why another tool?
+
+[TrainParity](https://github.com/intelland/TrainParity) checks observed stable-ID
+trajectories against a declared coverage policy and also tests actual training
+parity. Use it to audit observed runs. This tool instead computes a prospective
+finite plan without executing training code or importing a framework.
+
+[PyTorch documents](https://docs.pytorch.org/docs/main/utils/data.html) sampler
+padding/truncation and independent iterable-worker tails. Its `len(dataloader)`
+estimate may miss fragmented tails. This tool does not fix those semantics; it
+makes a limited, explicit plan inspectable with identity-level accounting.
+
+[WebDataset](https://webdataset.github.io/webdataset/webdataset/) offers actual
+sharding, batching and epoch controls. This candidate does not emulate its
+pipeline or resampling rules.
+
+## Development
+
+Python 3.10+, standard-library runtime. `python -m unittest discover -s tests -v`.
+The tests include an independent event-by-event reference over 9,360 small plans,
+regular input/output failures, empty sources, Unicode IDs and invalid inputs.
+No actual PyTorch execution has yet been validated. Local evidence is not hosted
+CI. Implementation and tests were produced on Anish's behalf; no claim of his
+personal code review or use is made.
