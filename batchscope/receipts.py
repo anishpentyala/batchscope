@@ -3,14 +3,19 @@ from collections import Counter
 from .core import InvalidPlan, MAX_ASSIGNMENTS, _analyze, integer
 
 
-def audit_receipts(plan, receipts):
+def audit_receipts(plan, receipts, *, check_order=False):
     """Audit an explicit complete receipt list, not the runtime or its provenance.
 
     Each occurrence has exactly id, rank, worker. Map workers are null because
     this model does not determine which map worker fetched a sample.
     """
+    if type(check_order) is not bool:
+        raise InvalidPlan('check_order must be boolean')
     expected = Counter()
-    baseline = _analyze(plan, expected)
+    sequences = {} if check_order else None
+    baseline = _analyze(plan, expected, sequences)
+    positions = {}
+    first_mismatch = {}
     if type(receipts) is not list or len(receipts) > MAX_ASSIGNMENTS:
         raise InvalidPlan(f'receipts must be an array of at most {MAX_ASSIGNMENTS} occurrences')
     observed = Counter()
@@ -30,6 +35,15 @@ def audit_receipts(plan, receipts):
         else:
             integer(worker, 'receipt worker', 0, plan['workers'] - 1)
         observed[identity, rank, worker] += 1
+        if check_order:
+            consumer = rank, worker
+            position = positions.get(consumer, 0)
+            sequence = sequences[consumer]
+            want = sequence[position] if position < len(sequence) else None
+            if want != identity and consumer not in first_mismatch:
+                first_mismatch[consumer] = {'index': position, 'expected_id': want,
+                                            'observed_id': identity}
+            positions[consumer] = position + 1
     # Preserve plan ID order, then unknown IDs in first-observed order. Consumer
     # sort is explicit so input arrival order never determines report order.
     identities = list(plan['ids']) + list(dict.fromkeys(
@@ -50,7 +64,7 @@ def audit_receipts(plan, receipts):
                 rows.append({'id': identity, 'rank': key[1], 'worker': key[2],
                              'known_id': identity in universe,
                              'expected': want, 'observed': got, 'delta': got - want})
-    return {'schema': 'batchscope-receipts-v1',
+    report = {'schema': 'batchscope-receipts-v1',
             'status': 'MATCHED_RECEIPTS' if not rows else 'RECEIPT_MISMATCH',
             'model': plan['mode'], 'planned_coverage_status': baseline['status'],
             'planned_warnings': baseline['warnings'],
@@ -60,3 +74,26 @@ def audit_receipts(plan, receipts):
             'unknown_id_occurrences': unknown, 'differences': rows,
             'scope': 'Conditional on the supplied complete receipts and declared plan. '
                      'No provenance, runtime, order, batch-boundary, content, or exactly-once guarantee.'}
+
+    if check_order:
+        differences = []
+        for (rank, worker), sequence in sequences.items():
+            consumer = rank, worker
+            count = positions.get(consumer, 0)
+            mismatch = first_mismatch.get(consumer)
+            if mismatch is None and count < len(sequence):
+                mismatch = {'index': count, 'expected_id': sequence[count],
+                            'observed_id': None}
+            if mismatch is not None:
+                differences.append({'rank': rank, 'worker': worker,
+                                    'expected_length': len(sequence),
+                                    'observed_length': count,
+                                    'first_difference': mismatch})
+        report['schema'] = 'batchscope-ordered-receipts-v1'
+        report['status'] = ('MATCHED_ORDERED_RECEIPTS' if not rows and not differences
+                            else 'ORDERED_RECEIPT_MISMATCH')
+        report['order_differences'] = differences
+        report['scope'] = ('Conditional on complete supplied receipts in each modeled consumer order. '
+                           'No cross-consumer order, provenance, runtime, batch-boundary, content, '
+                           'or exactly-once guarantee.')
+    return report

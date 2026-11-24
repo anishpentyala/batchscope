@@ -21,7 +21,7 @@ def analyze(plan):
     return _analyze(plan)
 
 
-def _analyze(plan, emission_counts=None):
+def _analyze(plan, emission_counts=None, emission_sequences=None):
     if type(plan) is not dict:
         raise InvalidPlan('plan must be an object')
     required = {'ids', 'mode', 'ranks', 'workers', 'batch_size', 'loader_drop_last'}
@@ -98,6 +98,8 @@ def _analyze(plan, emission_counts=None):
         active, tail = group[:keep], group[keep:]
         steps = (keep + batch - 1) // batch
         rank_steps[rank] += steps
+        if emission_sequences is not None:
+            emission_sequences[rank, worker] = active
         if emission_counts is not None:
             emission_counts.update((identity, rank, worker) for identity in active)
         assigned.update(group)

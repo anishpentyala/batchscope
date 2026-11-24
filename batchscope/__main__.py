@@ -41,13 +41,14 @@ def read_plan(path):
 
 def _run():
     try:
-        valid = len(sys.argv) == 2 or (len(sys.argv) == 4 and sys.argv[1] in ('--compare', '--receipts'))
+        valid = len(sys.argv) == 2 or (len(sys.argv) == 4 and sys.argv[1] in ('--compare', '--receipts', '--ordered-receipts'))
         if not valid or sys.argv[1] in ('-h', '--help'):
-            deliver('Usage: python -m batchscope PLAN.json\n       python -m batchscope --compare BEFORE.json AFTER.json\n       python -m batchscope --receipts PLAN.json RECEIPTS.json\n')
+            deliver('Usage: python -m batchscope PLAN.json\n       python -m batchscope --compare BEFORE.json AFTER.json\n       python -m batchscope --receipts PLAN.json RECEIPTS.json\n       python -m batchscope --ordered-receipts PLAN.json RECEIPTS.json\n')
             return (0 if len(sys.argv) == 2 else 2), False
-        if len(sys.argv) == 4 and sys.argv[1] == '--receipts':
+        if len(sys.argv) == 4 and sys.argv[1] in ('--receipts', '--ordered-receipts'):
             from .receipts import audit_receipts
-            result = audit_receipts(read_plan(sys.argv[2]), read_plan(sys.argv[3]))
+            result = audit_receipts(read_plan(sys.argv[2]), read_plan(sys.argv[3]),
+                                    check_order=sys.argv[1] == '--ordered-receipts')
         elif len(sys.argv) == 4 and sys.argv[1] == '--compare':
             from .compare import compare_plans
             result = compare_plans(read_plan(sys.argv[2]), read_plan(sys.argv[3]))
@@ -55,7 +56,7 @@ def _run():
             result = analyze(read_plan(sys.argv[1]))
         output = json.dumps(result, ensure_ascii=True, sort_keys=True, indent=2, allow_nan=False) + '\n'
         deliver(output)
-        return (0 if result['status'] in ('EXACTLY_ONCE', 'SAME_ACCOUNTING', 'MATCHED_RECEIPTS') else 1), False
+        return (0 if result['status'] in ('EXACTLY_ONCE', 'SAME_ACCOUNTING', 'MATCHED_RECEIPTS', 'MATCHED_ORDERED_RECEIPTS') else 1), False
     except (InvalidPlan, ValueError, OSError, RecursionError) as exc:
         try:
             sys.stderr.write('batchscope: invalid input or output failure: ' + str(exc) + '\n')
