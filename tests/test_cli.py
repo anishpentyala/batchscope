@@ -55,6 +55,17 @@ class CLI(unittest.TestCase):
         got=self.run_cli(json.dumps(p).encode())
         self.assertEqual([x['id'] for x in json.loads(got.stdout)['ids']],p['ids'])
 
+    def test_trace_selection(self):
+        p = plan(5)
+        p['trace_ids'] = [p['ids'][-1], p['ids'][0]]
+        got = self.run_cli(json.dumps(p).encode())
+        self.assertEqual(got.returncode, 1)
+        self.assertEqual([t['id'] for t in json.loads(got.stdout)['traces']], p['trace_ids'])
+        p['trace_ids'] = ['not-declared']
+        got = self.run_cli(json.dumps(p).encode())
+        self.assertEqual(got.returncode, 2)
+        self.assertEqual(got.stdout, b'')
+
     def test_help(self):
         got=subprocess.run([sys.executable,'-m','batchscope','--help'],capture_output=True)
         self.assertEqual(got.returncode,0)
