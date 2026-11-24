@@ -70,6 +70,24 @@ input files and plans over 8 MiB are rejected. Limits: 100,000 IDs, 1,024 combin
 consumers, 1,000,000 assigned occurrences. These are admission limits, not a hard
 RAM/time guarantee. A regular file on a slow filesystem can still block.
 
+## Selected identity witnesses
+
+Add optional `"trace_ids": ["a", "e"]` to the input to locate selected IDs within
+this finite model. Select at most 64 distinct IDs from the declared universe.
+The report adds `traces`, in selection order. Each trace contains the ID,
+`sampler_removed` (0 or 1), and a rank/worker-ordered `consumers` list containing
+only consumers assigned that ID. Each consumer has `assigned`, `emitted`, and
+`loader_dropped` occurrence counts. Map-style consumers have `worker: null`;
+map workers do not define independent sample ownership here.
+
+For the example above, tracing `a` shows one assigned occurrence on each rank.
+With `loader_drop_last: true`, rank 0 retains its occurrence and rank 1 drops its
+occurrence. An ID removed by global sampler truncation has `sampler_removed: 1`
+and an empty consumer list. An empty selection emits `traces: []`; omitting
+`trace_ids` preserves the original report shape. Traces describe declared
+ownership and tail arithmetic, not arrival order, observed consumption, or
+whether identical contents occur under other IDs. Reports still disclose IDs.
+
 ## Report and exits
 
 Every declared ID has assigned, emitted and loader-dropped multiplicities, plus
