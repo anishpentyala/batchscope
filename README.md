@@ -125,6 +125,39 @@ at most 1,000,000 occurrence objects. IDs use the plan's 256-character limit.
 Receipts may disclose sensitive IDs. The API is `audit_receipts(plan, receipts)`;
 inputs are not mutated. Single-plan and comparison outputs are unchanged.
 
+## Check order within each modeled consumer
+
+```sh
+batchscope --ordered-receipts plan.json receipts.json
+```
+
+This opt-in mode uses the same strict receipt contract and count differences as
+`--receipts`, then also checks the order of IDs within each modeled consumer.
+The API is `audit_receipts(plan, receipts, check_order=True)`. The default API
+and `--receipts` reports retain their original shape and count-only semantics.
+
+Input array order must reflect the collection boundary's order for each consumer.
+Events from different consumers may interleave freely. Map consumers are ranks
+with `worker: null`; iterable consumers are rank/worker pairs. This does not
+compare a global arrival order, infer PyTorch's worker scheduling, or reconstruct
+batches. Do not use this option on an unordered log export or a loader configured
+to return items in a different order from the declared model.
+
+The report uses `batchscope-ordered-receipts-v1`. `order_differences` lists each
+mismatched consumer in rank/worker order, its expected and observed lengths, and
+its first differing zero-based local index with `expected_id` and `observed_id`.
+A missing suffix has `observed_id: null`; an extra suffix has `expected_id: null`.
+Only the first local divergence is reported. These are positional witnesses,
+not an edit script, causal diagnosis, or alignment after an insertion/deletion.
+Repeated occurrences of the same ID are indistinguishable. It cannot detect a
+swap between equal IDs or different sample contents carrying the same ID.
+
+Exit 0 is `MATCHED_ORDERED_RECEIPTS`; exit 1 is `ORDERED_RECEIPT_MISMATCH`; exit 2
+is invalid input or failed delivery. As with count-only audits, a match may agree
+with a duplicating, incomplete or empty plan. The evidence remains conditional
+on complete, correctly labeled receipts, not authenticated runtime consumption,
+exactly-once coverage, batch boundaries or training behavior.
+
 ## Compare two explicit plans
 
 ```sh
