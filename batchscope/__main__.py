@@ -28,24 +28,31 @@ def deliver(text):
     sys.stdout.flush()
 
 
+def read_plan(path):
+    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0))
+    with os.fdopen(fd, 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise InvalidPlan('plan input must be a regular file')
+        raw = stream.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        raise InvalidPlan('plan exceeds 8 MiB')
+    return json.loads(raw.decode('utf-8'), object_pairs_hook=pairs, parse_constant=constant)
+
+
 def _run():
     try:
-        if len(sys.argv) != 2 or sys.argv[1] in ('-h', '--help'):
-            deliver('Usage: python -m batchscope PLAN.json\n')
+        valid = len(sys.argv) == 2 or (len(sys.argv) == 4 and sys.argv[1] == '--compare')
+        if not valid or sys.argv[1] in ('-h', '--help'):
+            deliver('Usage: python -m batchscope PLAN.json\n       python -m batchscope --compare BEFORE.json AFTER.json\n')
             return (0 if len(sys.argv) == 2 else 2), False
-        path = sys.argv[1]
-        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0))
-        with os.fdopen(fd, 'rb') as stream:
-            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                raise InvalidPlan('plan input must be a regular file')
-            raw = stream.read(MAX_BYTES + 1)
-        if len(raw) > MAX_BYTES:
-            raise InvalidPlan('plan exceeds 8 MiB')
-        plan = json.loads(raw.decode('utf-8'), object_pairs_hook=pairs, parse_constant=constant)
-        result = analyze(plan)
+        if len(sys.argv) == 4 and sys.argv[1] == '--compare':
+            from .compare import compare_plans
+            result = compare_plans(read_plan(sys.argv[2]), read_plan(sys.argv[3]))
+        else:
+            result = analyze(read_plan(sys.argv[1]))
         output = json.dumps(result, ensure_ascii=True, sort_keys=True, indent=2, allow_nan=False) + '\n'
         deliver(output)
-        return (0 if result['status'] == 'EXACTLY_ONCE' else 1), False
+        return (0 if result['status'] in ('EXACTLY_ONCE', 'SAME_ACCOUNTING') else 1), False
     except (InvalidPlan, ValueError, OSError, RecursionError) as exc:
         try:
             sys.stderr.write('batchscope: invalid input or output failure: ' + str(exc) + '\n')

@@ -88,6 +88,41 @@ and an empty consumer list. An empty selection emits `traces: []`; omitting
 ownership and tail arithmetic, not arrival order, observed consumption, or
 whether identical contents occur under other IDs. Reports still disclose IDs.
 
+## Compare two explicit plans
+
+```sh
+batchscope --compare before.json after.json
+```
+
+Both inputs use the same validation and file limits as a single plan. They must
+declare the same unique ID universe, but may reorder it or change any explicit
+loading rule. No union, intersection, coercion or implicit ID alignment is used.
+Rows align by exact ID and are reported in the before plan's order.
+
+The `batchscope-comparison-v1` report contains before/after coverage statuses,
+aggregate before/after counts and signed deltas (after minus before), per-rank
+batch counts, and every ID whose assigned/emitted/loader-dropped/sampler-removed
+accounting changes. Added or removed ranks use `null` for the absent side and
+its delta, rather than pretending an absent rank had zero batches. Separate
+`emitted_gain_occurrences` and `emitted_loss_occurrences` prevent equal aggregate
+counts from concealing identity swaps. Changing input order can change which
+IDs survive tails even when emitted totals and batch counts stay the same.
+
+Comparison exits 0 for `SAME_ACCOUNTING`, 1 for `CHANGED_ACCOUNTING`, and 2 for
+invalid inputs or failed output delivery. A model change, consumer-count change
+or warning change counts as changed accounting too. `input_order_changed`
+reports reordering separately; unchanged accounting is **not** a claim of equal
+order, per-consumer identity ownership, statistical equivalence, synchronization
+or actual consumption. In particular, two identically incomplete/duplicating
+plans can return `SAME_ACCOUNTING`; inspect both embedded coverage statuses.
+Optional trace selections do not affect comparison. Full single-plan reports
+remain available separately; this comparison does not embed their trace rows.
+
+Python API: `from batchscope import compare_plans`, then
+`compare_plans(before_dict, after_dict)`. Inputs are not modified. All counts and
+IDs describe declared finite models only. Comparisons are source-only and are
+not part of any published package release.
+
 ## Report and exits
 
 Every declared ID has assigned, emitted and loader-dropped multiplicities, plus
