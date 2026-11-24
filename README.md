@@ -88,6 +88,43 @@ and an empty consumer list. An empty selection emits `traces: []`; omitting
 ownership and tail arithmetic, not arrival order, observed consumption, or
 whether identical contents occur under other IDs. Reports still disclose IDs.
 
+## Audit explicit observed receipts
+
+```sh
+batchscope --receipts plan.json receipts.json
+```
+
+Receipts are a JSON array of individual retained occurrences, for example
+`[{"id": "a", "rank": 0, "worker": null}]`. Each object requires exactly these
+three fields. Record at the boundary you intend to audit, and supply a complete
+list for the declared finite run. Nothing here records or authenticates events.
+Repeated entries are separate occurrences, not deduplicated records. Unknown
+nonempty IDs are reported as unexpected evidence, not silently discarded.
+Rank must exist in the plan. Iterable worker must exist too. Map worker must be
+`null`, because this model does not predict map-worker identity ownership.
+
+The `batchscope-receipts-v1` report compares occurrence counts per exact
+`(id, rank, worker)` key. It reports every differing key, missing and extra
+occurrences separately, and the number of unknown-ID occurrences (a subset of
+extras). A consumer swap therefore produces a missing and an extra occurrence
+even when global totals match. Known rows follow plan ID order and then consumer
+order; unknown IDs follow first-observed ID order. Arrival order is not checked.
+The full baseline coverage status and warnings remain visible as separate fields.
+
+Exit 0 means `MATCHED_RECEIPTS`, exit 1 means `RECEIPT_MISMATCH`, and exit 2 means
+invalid input or failed output delivery. Matching receipts does **not** mean
+exactly-once coverage: they can match a plan that deliberately duplicates or
+omits IDs, or an empty plan. It also cannot establish receipt completeness,
+provenance, real consumption, sample contents, batch boundaries, execution order,
+optimizer updates or synchronized collective calls. An incomplete receipt export
+will look like missing occurrences. Use the retained evidence and its collection
+boundary to interpret a mismatch, not as a diagnosis of its cause.
+
+The receipt file uses the same strict JSON and 8 MiB file limits as a plan, and
+at most 1,000,000 occurrence objects. IDs use the plan's 256-character limit.
+Receipts may disclose sensitive IDs. The API is `audit_receipts(plan, receipts)`;
+inputs are not mutated. Single-plan and comparison outputs are unchanged.
+
 ## Compare two explicit plans
 
 ```sh
