@@ -1,0 +1,1 @@
+{"ids":["a","b","c","d","e"],"mode":"distributed_map","ranks":2,"workers":1,"batch_size":2,"sampler_drop_last":false,"loader_drop_last":false}
