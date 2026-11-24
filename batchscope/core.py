@@ -4,6 +4,7 @@ from collections import Counter
 MAX_IDS = 100_000
 MAX_CONSUMERS = 1024
 MAX_ASSIGNMENTS = 1_000_000
+MAX_TRACE_IDS = 64
 
 
 class InvalidPlan(ValueError):
@@ -20,7 +21,7 @@ def analyze(plan):
     if type(plan) is not dict:
         raise InvalidPlan('plan must be an object')
     required = {'ids', 'mode', 'ranks', 'workers', 'batch_size', 'loader_drop_last'}
-    allowed = required | {'sampler_drop_last'}
+    allowed = required | {'sampler_drop_last', 'trace_ids'}
     if set(plan) - allowed or required - set(plan):
         raise InvalidPlan('unknown or missing plan fields')
     ids = plan['ids']
@@ -30,6 +31,15 @@ def analyze(plan):
         raise InvalidPlan('each ID must be a nonempty string of at most 256 characters')
     if len(set(ids)) != len(ids):
         raise InvalidPlan('IDs must be unique in the declared universe')
+    trace_ids = plan.get('trace_ids', [])
+    if type(trace_ids) is not list or len(trace_ids) > MAX_TRACE_IDS:
+        raise InvalidPlan(f'trace_ids must be an array of at most {MAX_TRACE_IDS} IDs')
+    universe = set(ids)
+    if any(type(x) is not str or x not in universe for x in trace_ids):
+        raise InvalidPlan('trace_ids must contain only declared IDs')
+    if len(set(trace_ids)) != len(trace_ids):
+        raise InvalidPlan('trace_ids must be unique')
+    trace_rows = {x: [] for x in trace_ids}
     mode = plan['mode']
     if type(mode) is not str or mode not in ('distributed_map', 'iterable_strided', 'iterable_replicated'):
         raise InvalidPlan('unsupported mode')
@@ -87,6 +97,13 @@ def analyze(plan):
         assigned.update(group)
         emitted.update(active)
         discarded.update(tail)
+        if trace_ids:
+            local_assigned = Counter(x for x in group if x in trace_rows)
+            local_emitted = Counter(x for x in active if x in trace_rows)
+            for x, count in local_assigned.items():
+                trace_rows[x].append({'rank': rank, 'worker': worker,
+                                      'assigned': count, 'emitted': local_emitted[x],
+                                      'loader_dropped': count - local_emitted[x]})
         consumers.append({'rank': rank, 'worker': worker, 'assigned': len(group),
                           'emitted': keep, 'dropped_tail': len(tail), 'batches': steps,
                           'last_batch_size': (keep - (steps - 1) * batch) if steps else 0})
@@ -107,7 +124,7 @@ def analyze(plan):
     expected_assigned = size - len(sampler_removed) if mode == 'distributed_map' and plan['sampler_drop_last'] else size
     assert sum(assigned.values()) == expected_assigned
     assert all(x['assigned'] == x['emitted'] + x['loader_dropped'] for x in rows)
-    return {'schema': 'batchscope-report-v1', 'model': mode,
+    report = {'schema': 'batchscope-report-v1', 'model': mode,
             'status': 'EMPTY_UNIVERSE' if not ids else ('EXACTLY_ONCE' if exact else 'COVERAGE_CHANGED'),
             'universe_size': n, 'assigned_occurrences': sum(assigned.values()),
             'emitted_occurrences': sum(emitted.values()),
@@ -118,3 +135,9 @@ def analyze(plan):
             'loader_dropped_occurrences': sum(discarded.values()),
             'rank_batches': rank_steps, 'warnings': warnings,
             'consumers': consumers, 'ids': rows}
+
+    if 'trace_ids' in plan:
+        report['traces'] = [
+            {'id': x, 'sampler_removed': int(x in removed_set),
+             'consumers': trace_rows[x]} for x in trace_ids]
+    return report
