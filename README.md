@@ -100,7 +100,13 @@ batches and final batch size; per-rank batches sum that rank's worker batches.
 
 The full report must be written and flushed before exit 0 or 1. A broken output
 may retain a JSON prefix, so use a report only with successful delivery and its
-expected exit status. Redirecting stdout is not an atomic output transaction.
+expected exit status. Redirecting stdout is not an atomic output transaction. A short `write` return
+or a failed flush is an output failure too, even if no exception was raised by
+`write`. The callable `batchscope.__main__.main()` returns 2 without replacing
+or closing caller-owned stdout. The module and installed console use a separate
+process entrypoint to prevent a failed buffered stdout from being retried during
+interpreter shutdown. Help output follows the same complete-delivery contract.
+These process controls are tested on Linux CPython; no Windows claim is made.
 
 `UNEQUAL_RANK_BATCH_COUNTS` is a planning warning, not proof of a DDP hang.
 Actual synchronization, masking and join handling are outside this tool.
