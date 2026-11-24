@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 license = "MIT"
 
 [project.scripts]
-batchscope = "batchscope.__main__:main"
+batchscope = "batchscope.__main__:entrypoint"
 
 [tool.setuptools.packages.find]
 include = ["batchscope*"]
