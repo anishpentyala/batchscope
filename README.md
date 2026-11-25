@@ -251,3 +251,39 @@ installed in that CPU job; PyTorch warned about its unavailable NumPy bridge,
 which these tests do not use. Other framework versions, GPUs and custom loading
 strategies remain unvalidated. Implementation and tests were produced on Anish's behalf; no claim of his
 personal code review or use is made.
+
+## Audit explicit batch boundaries
+
+```sh
+batchscope --batch-receipts plan.json batches.json
+```
+
+A batch file is a JSON array of objects with exactly `rank`, `worker` and `ids`,
+for example `[{"rank": 0, "worker": null, "ids": ["a", "b"]}]`.
+Each `ids` is a nonempty list of retained occurrences. Repeated IDs remain
+separate occurrences. Rank/worker rules are the same as receipts above. Empty
+batches are rejected; an empty top-level array represents no retained batches.
+At most1,000,000 batches and1,000,000 total occurrences are admitted, subject to
+the same8MiB CLI input limit. Unknown nonempty IDs remain mismatch evidence.
+
+The API is `audit_batches(plan, batches)`. This opt-in mode compares exact
+local batch ID lists against consecutive `batch_size` chunks of each modeled
+consumer's emitted sequence, including a permitted short final batch. Input
+array order must preserve each consumer's local batch order. Different consumers
+may interleave freely. For iterable models, consumers are rank/worker pairs,
+not reconstructed rank-level loader batches. Map workers remain `null`.
+
+The `batchscope-batch-receipts-v1` report embeds the full `ordered_receipts`
+report, including planned coverage status, count and local order differences.
+`boundary_differences` gives each mismatched consumer's expected/observed batch
+counts and its first differing zero-based local batch index with full
+`expected_ids`/`observed_ids`. Missing and extra batches use `null` on the absent
+side. Only the first local difference is retained, not a sequence alignment or
+causal diagnosis. Reports disclose IDs. Existing receipt modes are unchanged.
+
+Thus `[a,b],[c]` differs from `[a],[b,c]` even though flattened ID order and counts
+agree. Exit0 is `MATCHED_BATCH_RECEIPTS`, exit1 is `BATCH_RECEIPT_MISMATCH`, and
+exit2 is invalid input or failed delivery. A match can agree with an empty,
+omitting or duplicating plan. This does not authenticate collection completeness,
+prove runtime consumption or contents, infer cross-consumer order, or establish
+optimizer updates, synchronized collectives or exactly-once coverage.
