@@ -3,6 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
+readme = "README.md"
 name = "batchscope"
 version = "0.1.0"
 description = "Inspect exact finite sample coverage under explicitly declared loading plans"
